@@ -10,9 +10,7 @@ function setCORS(res) {
 export default async function handler(req, res) {
   setCORS(res);
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST, OPTIONS");
@@ -23,18 +21,19 @@ export default async function handler(req, res) {
     const project = req.body && typeof req.body === "object" ? req.body : {};
     const bc3Text = toBC3(project);
 
+    // Nombre del archivo .bc3
     const filename = (project.name || "proyecto").replace(/\s+/g, "_") + ".bc3";
 
-    // 🔑 Forzar descarga + dejar que el front-end use el nombre .bc3
-    res.setHeader("Content-Type", "application/octet-stream; charset=utf-8");
+    // Forzar descarga y evitar que el cliente “huela” texto
+    res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Transfer-Encoding", "binary");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
-    // 🔑 Añadir BOM UTF-8 para herramientas que lo requieren
-    const bom = Buffer.from("\uFEFF", "utf8");
-    const content = Buffer.concat([bom, Buffer.from(bc3Text, "utf8")]);
+    // IMPORTANTE: BC3 en latin1 (ISO-8859-1), SIN BOM
+    const buffer = Buffer.from(bc3Text, "latin1");
 
-    return res.status(200).send(content);
+    return res.status(200).send(buffer);
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: "Error generating BC3" });
