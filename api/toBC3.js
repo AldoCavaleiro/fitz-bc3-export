@@ -10,8 +10,8 @@ export function toBC3(project) {
   const safe = (s="") => String(s).replace(/\|/g, " ");
 
   const lines = [];
-  // Cabecera FIEBDC-3 + declaramos UTF-8 (el BOM lo añade export-bc3.js)
-  lines.push("~V|FIEBDC-3/2012|||UTF-8");
+  // Cabecera FIEBDC-3 estándar SIN indicar UTF-8 (compatibilidad máxima)
+  lines.push("~V|FIEBDC-3/2012|||");
   lines.push(`~K|${code}|${name}|${desc}|${version}|${today}`);
 
   let total = 0;
@@ -41,6 +41,7 @@ export function toBC3(project) {
   }
   lines.push(`~M|TOTAL PROYECTO|${total.toFixed(2)}`);
 
-  // 🔑 CRLF (Windows) + línea final
+  // Finales de línea Windows (CRLF) + línea final
   return lines.join("\r\n") + "\r\n";
 }
+
