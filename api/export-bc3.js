@@ -30,8 +30,8 @@ export default async function handler(req, res) {
     // Nombre sugerido del archivo
     const filename = (project.name || "proyecto").replace(/\s+/g, "_") + ".bc3";
 
-    // Forzar descarga y codificación correcta
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    // Forzar descarga con extensión correcta
+    res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
 
     return res.status(200).send(bc3Text);
@@ -40,3 +40,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Error generating BC3" });
   }
 }
+
