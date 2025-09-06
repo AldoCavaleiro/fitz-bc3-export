@@ -10,8 +10,9 @@ export function toBC3(project) {
   const safe = (s="") => String(s).replace(/\|/g, " ");
 
   const lines = [];
-  // Versión 2016 (más compatible con visores actuales) y SIN indicar UTF-8
-  lines.push("~V|FIEBDC-3/2016|||");
+  // Cabecera FIEBDC-3 con codificación declarada (ISO-8859-1)
+  // Formato: ~V|FIEBDC-3/AAAA||<charset>|
+  lines.push("~V|FIEBDC-3/2012||ISO-8859-1|");
   lines.push(`~K|${code}|${name}|${desc}|${version}|${today}`);
 
   let total = 0;
@@ -41,6 +42,6 @@ export function toBC3(project) {
   }
   lines.push(`~M|TOTAL PROYECTO|${total.toFixed(2)}`);
 
-  // CRLF (Windows) + línea final + EOF clásico (0x1A)
-  return lines.join("\r\n") + "\r\n" + String.fromCharCode(26);
+  // CRLF + línea final (sin EOF 0x1A)
+  return lines.join("\r\n") + "\r\n";
 }
