@@ -21,20 +21,23 @@ export default async function handler(req, res) {
     const project = req.body && typeof req.body === "object" ? req.body : {};
     let bc3Text = toBC3(project);
 
-    // 🔒 Normalizar saltos de línea a CRLF SIEMPRE
+    // Normalizar saltos de línea a CRLF y garantizar EOF al final
     bc3Text = bc3Text.replace(/\r?\n/g, "\r\n");
-    if (!bc3Text.endsWith("\r\n")) bc3Text += "\r\n";
+    if (!bc3Text.endsWith("\x1A")) {
+      if (!bc3Text.endsWith("\r\n")) bc3Text += "\r\n";
+      bc3Text += "\x1A"; // EOF
+    }
 
-    // Nombre del archivo .bc3
+    // Nombre del archivo
     const filename = (project.name || "proyecto").replace(/\s+/g, "_") + ".bc3";
 
-    // Forzar descarga como archivo, evitar sniff de texto
+    // Forzar descarga como archivo y evitar sniff de texto
     res.setHeader("Content-Type", "application/octet-stream");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Transfer-Encoding", "binary");
     res.setHeader("X-Content-Type-Options", "nosniff");
 
-    // ⚠️ Sin BOM y en ISO-8859-1 (latin1) para compat máxima
+    // ISO-8859-1 (latin1), SIN BOM
     const buffer = Buffer.from(bc3Text, "latin1");
 
     return res.status(200).send(buffer);
