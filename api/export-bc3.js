@@ -9,19 +9,19 @@ export default async function handler(req, res) {
 
   try {
     const project = req.body && typeof req.body === "object" ? req.body : {};
-    const bc3Text = toBC3(project);
+    let bc3Text = toBC3(project)
+      .replace(/\r?\n/g, "\r\n");           // normaliza CRLF
+    if (!bc3Text.endsWith("\r\n")) bc3Text += "\r\n";
 
-    // Convertir a Base64
-    const buffer = Buffer.from(bc3Text, "utf8");
-    const base64Data = buffer.toString("base64");
+    // IMPORTANTE: latin1 para BC3
+    const base64Data = Buffer.from(bc3Text, "latin1").toString("base64");
 
-    // Nombre de archivo
     const filename = (project.name || "proyecto").replace(/\s+/g, "_") + ".bc3";
 
-    // Responder en JSON
     return res.status(200).json({
       filename,
       contentType: "application/octet-stream",
+      encoding: "base64",                 // <- ayuda a Actions a tratarlo como fichero
       data: base64Data
     });
   } catch (e) {
