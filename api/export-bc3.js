@@ -1,5 +1,5 @@
 // api/export-bc3.js
-import { toBC3 } from './toBC3.js';
+import { toBC3 } from "./toBC3.js";
 
 function setCORS(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -9,11 +9,7 @@ function setCORS(res) {
 
 export default async function handler(req, res) {
   setCORS(res);
-
-  // Preflight CORS
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST, OPTIONS");
@@ -23,20 +19,23 @@ export default async function handler(req, res) {
   try {
     const project = req.body && typeof req.body === "object" ? req.body : {};
 
-    // Generar texto BC3 y normalizar CRLF
+    // Para compatibilidad seguimos devolviendo el base64 (por si GPT lo adjunta)
     let bc3Text = toBC3(project).replace(/\r?\n/g, "\r\n");
     if (!bc3Text.endsWith("\r\n")) bc3Text += "\r\n";
-
-    // Codificar como latin1 (ISO-8859-1) y devolver en base64
     const base64Data = Buffer.from(bc3Text, "latin1").toString("base64");
-
     const filename = (project.name || "proyecto").replace(/\s+/g, "_") + ".bc3";
+
+    // Además devolvemos una URL de descarga directa
+    const payloadB64 = Buffer.from(JSON.stringify(project), "utf8").toString("base64");
+    const baseUrl = "https://fitz-bc3-export.vercel.app";
+    const url = `${baseUrl}/api/download-bc3?p=${encodeURIComponent(payloadB64)}`;
 
     return res.status(200).json({
       filename,
       contentType: "application/octet-stream",
       encoding: "base64",
-      data: base64Data
+      data: base64Data,     // el GPT puede intentar adjuntar
+      url                   // y siempre tendrás este enlace directo
     });
   } catch (e) {
     console.error(e);
