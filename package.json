@@ -3,3 +3,11 @@
   "private": true,
   "type": "module"
 }
+{
+  "name": "fitz-export",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}
