@@ -6,12 +6,10 @@ export function toBC3(project) {
   const desc = project.desc || "";
   const version = project.version || "1.0";
   const items = Array.isArray(project.items) ? project.items : [];
-
   const safe = (s="") => String(s).replace(/\|/g, " ");
 
   const lines = [];
-  // Cabecera FIEBDC-3 con codificación declarada (ISO-8859-1)
-  // Formato: ~V|FIEBDC-3/AAAA||<charset>|
+  // Cabecera FIEBDC-3 con charset declarado (muchos visores lo piden)
   lines.push("~V|FIEBDC-3/2012||ISO-8859-1|");
   lines.push(`~K|${code}|${name}|${desc}|${version}|${today}`);
 
@@ -40,8 +38,8 @@ export function toBC3(project) {
       idx++;
     }
   }
-  lines.push(`~M|TOTAL PROYECTO|${total.toFixed(2)}`);
 
-  // CRLF + línea final (sin EOF 0x1A)
+  lines.push(`~M|TOTAL PROYECTO|${total.toFixed(2)}`);
+  // CRLF + última línea siempre
   return lines.join("\r\n") + "\r\n";
 }
