@@ -1,166 +1,167 @@
 // api/toPDF.js
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
+
+function mm(n) { return (n / 25.4) * 72; } // mm → puntos
+
+function wrapText(text, font, size, maxWidth) {
+  const words = String(text || '').split(/\s+/);
+  const lines = [];
+  let line = '';
+
+  for (const w of words) {
+    const test = line ? line + ' ' + w : w;
+    const width = font.widthOfTextAtSize(test, size);
+    if (width > maxWidth && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
 
 /**
- * Entrada esperada (ejemplo mínimo):
+ * payload esperado:
  * {
- *   "title": "Memoria técnica",
- *   "subtitle": "Cabaña de madera 20x30",
- *   "date": "2025-09-07",
- *   "logo": { "src": "https://.../logo.png", "width": 120 }, // opcional
- *   "sections": [
- *     { "heading": "Objeto", "body": "Texto..." },
- *     { "heading": "Alcance", "body": "Texto..." }
- *   ],
- *   "footer": "PGM Proyectos • www.pgmproyectos.com",
- *   "filename": "memoria_cabana.pdf" // opcional
+ *   title: "Memoria técnica",
+ *   subtitle: "Cabaña de madera 20x30",
+ *   date: "2025-09-07",
+ *   logo: { src: "https://…png|jpg", width: 90 }, // opcional (ancho en px aprox)
+ *   sections: [{ heading: "Objeto", body: "…" }, { heading: "Alcance", body: "…" }],
+ *   footer: "PGM Proyectos · www.pgmproyectos.com",
+ *   filename: "memoria.pdf"
  * }
  */
-
-export async function toPDF(spec = {}) {
-  const A4 = { w: 595.28, h: 841.89 }; // puntos
-  const margin = 40;
-
+export async function toPDF(payload = {}) {
   const {
-    title = "Documento",
-    subtitle = "",
-    date = new Date().toISOString().slice(0, 10),
-    logo = null, // { src, width }
+    title = 'Documento',
+    subtitle = '',
+    date = '',
+    logo = null,
     sections = [],
-    footer = "",
-    filename = "documento.pdf"
-  } = spec;
+    footer = '',
+  } = payload;
 
-  const pdf = await PDFDocument.create();
-  const page = pdf.addPage([A4.w, A4.h]);
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([mm(210), mm(297)]); // A4
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const helv = await pdf.embedFont(StandardFonts.Helvetica);
-  const helvBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const margin = mm(20);
+  const usableW = page.getWidth() - margin * 2;
+  let y = page.getHeight() - margin;
 
-  let y = A4.h - margin;
-
-  // LOGO (PNG o JPG)
+  // LOGO (opcional y no bloqueante)
   if (logo && logo.src) {
     try {
-      const resp = await fetch(logo.src);
-      const arr = await resp.arrayBuffer();
+      const res = await fetch(logo.src);
+      const bytes = new Uint8Array(await res.arrayBuffer());
       let img;
-      // Intento PNG y luego JPG
-      try { img = await pdf.embedPng(arr); }
-      catch { img = await pdf.embedJpg(arr); }
+      try {
+        img = await doc.embedPng(bytes);
+      } catch {
+        img = await doc.embedJpg(bytes); // por si el PNG falla y realmente era JPG
+      }
+      const imgW = Number(logo.width || 90); // px aprox → lo usamos directo
+      const ratio = imgW / img.width;
+      const imgH = img.height * ratio;
 
-      const maxW = typeof logo.width === "number" ? logo.width : 120;
-      const scale = maxW / img.width;
-      const w = maxW;
-      const h = img.height * scale;
-      page.drawImage(img, { x: margin, y: y - h, width: w, height: h });
-      y -= h + 12; // espacio tras logo
-    } catch {
-      // Si falla el logo, seguimos sin romper
+      page.drawImage(img, {
+        x: margin,
+        y: y - imgH,
+        width: imgW,
+        height: imgH,
+      });
+      y -= (imgH + 12);
+    } catch (e) {
+      // No detener la generación si el logo falla
+      console.error('Logo no cargado:', e);
     }
   }
 
   // TÍTULO
   const titleSize = 20;
-  const tw = helvBold.widthOfTextAtSize(title, titleSize);
   page.drawText(title, {
     x: margin,
     y: y - titleSize,
     size: titleSize,
-    font: helvBold,
-    color: rgb(0, 0, 0)
+    font: fontBold,
+    color: rgb(0, 0, 0),
   });
-  y -= titleSize + 6;
+  y -= (titleSize + 6);
 
   // SUBTÍTULO + FECHA
-  const sub = [subtitle, date].filter(Boolean).join("  •  ");
-  if (sub) {
-    const subSize = 11;
-    page.drawText(sub, {
-      x: margin,
-      y: y - subSize,
-      size: subSize,
-      font: helv,
-      color: rgb(0.2, 0.2, 0.2)
-    });
-    y -= subSize + 18;
-  } else {
-    y -= 10;
+  const subSize = 12;
+  if (subtitle) {
+    page.drawText(subtitle, { x: margin, y: y - subSize, size: subSize, font });
+    y -= (subSize + 4);
+  }
+  if (date) {
+    page.drawText(date, { x: margin, y: y - subSize, size: subSize, font, color: rgb(0.25,0.25,0.25) });
+    y -= (subSize + 10);
   }
 
   // SECCIONES
-  const maxWidth = A4.w - margin * 2;
+  const headingSize = 14;
   const bodySize = 11;
-  const headingSize = 13;
   const lineGap = 4;
 
-  const drawWrapped = (text, font, size, x, yStart) => {
-    const words = String(text).split(/\s+/);
-    let line = "";
-    let yLine = yStart;
-    const lines = [];
-    for (const w of words) {
-      const test = line ? `${line} ${w}` : w;
-      const width = font.widthOfTextAtSize(test, size);
-      if (width > maxWidth) {
-        if (line) lines.push(line);
-        line = w;
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-
-    for (const ln of lines) {
-      if (yLine < margin + 60) {
-        // Nueva página si no cabe
-        const p = pdf.addPage([A4.w, A4.h]);
-        yLine = A4.h - margin;
-      }
-      page.drawText(ln, { x: margin, y: yLine - size, size, font, color: rgb(0,0,0) });
-      yLine -= size + lineGap;
-    }
-    return yLine;
-  };
-
   for (const sec of sections) {
-    const h = sec.heading ? String(sec.heading) : "";
-    const b = sec.body ? String(sec.body) : "";
+    // salto de página si hace falta
+    if (y < margin + 80) {
+      y = page.getHeight() - margin;
+      const newPage = doc.addPage([mm(210), mm(297)]);
+      newPage.drawText('(continuación)', {
+        x: margin,
+        y: y - bodySize,
+        size: bodySize,
+        font,
+        color: rgb(0.4,0.4,0.4),
+      });
+      page.drawText('', { x:0, y:0, size:1, font }); // dummy
+      // cambiar referencia
+      page = newPage;
+      y -= (bodySize + 10);
+    }
 
-    if (h) {
-      page.drawText(h, {
+    if (sec.heading) {
+      page.drawText(String(sec.heading), {
         x: margin,
         y: y - headingSize,
         size: headingSize,
-        font: helvBold,
-        color: rgb(0,0,0)
+        font: fontBold,
       });
-      y -= headingSize + 6;
+      y -= (headingSize + 4);
     }
-    if (b) {
-      y = drawWrapped(b, helv, bodySize, margin, y);
-      y -= 8;
+
+    const lines = wrapText(sec.body || '', font, bodySize, usableW);
+    for (const ln of lines) {
+      if (y < margin + 40) {
+        y = page.getHeight() - margin;
+        const np = doc.addPage([mm(210), mm(297)]);
+        page = np;
+      }
+      page.drawText(ln, { x: margin, y: y - bodySize, size: bodySize, font });
+      y -= (bodySize + lineGap);
     }
-    y -= 6;
+    y -= 8;
   }
 
-  // LÍNEA + PIE
+  // FOOTER
   if (footer) {
-    page.drawLine({
-      start: { x: margin, y: margin + 22 },
-      end:   { x: A4.w - margin, y: margin + 22 },
-      thickness: 0.5,
-      color: rgb(0.7,0.7,0.7)
-    });
+    const footerY = margin / 2;
     page.drawText(footer, {
-      x: margin, y: margin + 8, size: 9, font: helv, color: rgb(0.3,0.3,0.3)
+      x: margin,
+      y: footerY,
+      size: 10,
+      font,
+      color: rgb(0.3, 0.3, 0.3),
     });
   }
 
-  const pdfBytes = await pdf.save(); // Uint8Array
-  const outName = filename && filename.toLowerCase().endsWith(".pdf")
-    ? filename
-    : (filename || (title || "documento")).replace(/\s+/g,"_") + ".pdf";
-
-  return { bytes: pdfBytes, filename: outName, contentType: "application/pdf" };
+  const pdfBytes = await doc.save();           // Uint8Array
+  const base64 = Buffer.from(pdfBytes).toString('base64');
+  return { base64 };
 }
