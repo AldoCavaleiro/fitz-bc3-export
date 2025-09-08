@@ -1,128 +1,142 @@
 // api/export-pdf.js
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-
-// CORS helper
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-}
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 export default async function handler(req, res) {
-  setCors(res);
-  if (req.method === "OPTIONS") return res.status(200).end();
+  // CORS básico para pruebas (Hoppscotch/navegador)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Use POST" });
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    return res.status(405).json({ error: 'Use POST' });
   }
 
   try {
     const {
-      title = "Informe",
-      subtitle = "",
-      date,
-      // logo: { src, width }  -> OPCIONAL
-      logo,
-      // sections: [{ heading, body }]
+      title = 'Memoria técnica',
+      subtitle = '',
+      date = '',
+      logo = null, // { src: "https://...png", width: 90 }
       sections = [],
-      footer = "",
-      filename = "documento.pdf",
+      footer = '',
+      filename = 'documento.pdf',
     } = req.body || {};
 
-    const pdf = await PDFDocument.create();
-    const page = pdf.addPage([595.28, 841.89]); // A4 portrait
-    const { width, height } = page.getSize();
+    // --- Crear PDF ---
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595.28, 841.89]); // A4 puntos
+    const { width } = page.getSize();
+    const marginX = 50;
+    let y = 800;
 
-    const font = await pdf.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Cabecera
-    let y = height - 60;
-
-    // Logo (opcional, y NO rompe si falla)
-    if (logo && logo.src) {
+    // Logo opcional (PNG/JPG remoto)
+    if (logo?.src) {
       try {
-        const resp = await fetch(logo.src, { cache: "no-store" });
-        const bytes = new Uint8Array(await resp.arrayBuffer());
+        const resp = await fetch(logo.src);
+        const buf = await resp.arrayBuffer();
+        const mime = resp.headers.get('content-type') || '';
         let img;
-        const lower = logo.src.toLowerCase();
-        if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-          img = await pdf.embedJpg(bytes);
-        } else {
-          img = await pdf.embedPng(bytes);
-        }
-        const w = Math.min(logo.width || 90, 160);
-        const scale = w / img.width;
-        const h = img.height * scale;
-        page.drawImage(img, { x: 50, y: y - h + 10, width: w, height: h });
-      } catch {
-        // ignoramos errores de logo
+        if (mime.includes('png')) img = await pdfDoc.embedPng(buf);
+        else img = await pdfDoc.embedJpg(buf);
+        const targetW = Number(logo.width || 80);
+        const ratio = targetW / img.width;
+        const targetH = img.height * ratio;
+        page.drawImage(img, { x: marginX, y: y - targetH, width: targetW, height: targetH });
+      } catch (e) {
+        // no bloquea si el logo falla
       }
     }
 
-    page.drawText(title, { x: 50, y, size: 20, font: fontBold });
-    y -= 24;
+    // Título
+    y -= 40;
+    page.drawText(title, { x: marginX, y, size: 18, font: fontBold, color: rgb(0, 0, 0) });
+    y -= 22;
 
-    if (subtitle) {
-      page.drawText(subtitle, { x: 50, y, size: 14, font });
+    // Subtítulo + fecha
+    const sub = [subtitle, date].filter(Boolean).join(' · ');
+    if (sub) {
+      page.drawText(sub, { x: marginX, y, size: 11, font, color: rgb(0.2, 0.2, 0.2) });
       y -= 18;
     }
 
-    const theDate = date || new Date().toISOString().slice(0, 10);
-    page.drawText(theDate, { x: width - 140, y: height - 40, size: 10, font });
+    // Separador
+    page.drawLine({ start: { x: marginX, y }, end: { x: width - marginX, y }, thickness: 1, color: rgb(0.6,0.6,0.6) });
+    y -= 18;
 
-    // Utilidad para “wrap” de texto
-    const wrap = (text = "", size = 11, maxWidth = width - 100) => {
-      const words = String(text).split(/\s+/);
+    // Secciones
+    const maxWidth = width - marginX * 2;
+    const wrapText = (txt, size) => {
+      const words = String(txt || '').split(/\s+/);
       const lines = [];
-      let line = "";
+      let cur = '';
       for (const w of words) {
-        const test = line ? line + " " + w : w;
-        if (font.widthOfTextAtSize(test, size) > maxWidth) {
-          if (line) lines.push(line);
-          line = w;
-        } else {
-          line = test;
-        }
+        const test = cur ? cur + ' ' + w : w;
+        const wWidth = font.widthOfTextAtSize(test, size);
+        if (wWidth > maxWidth) { lines.push(cur); cur = w; }
+        else cur = test;
       }
-      if (line) lines.push(line);
+      if (cur) lines.push(cur);
       return lines;
     };
 
-    // Cuerpo básico (1 página). Si necesitas multipágina lo añadimos luego.
-    for (const sec of sections) {
-      y -= 12;
-      page.drawText(sec?.heading || "", { x: 50, y, size: 13, font: fontBold });
+    for (const s of Array.isArray(sections) ? sections : []) {
+      if (y < 120) { page.drawText('» Continúa…', { x: marginX, y: 70, size: 10, font }); }
+      if (y < 100) {
+        const p2 = pdfDoc.addPage([595.28, 841.89]);
+        y = 800;
+        p2.drawText(title, { x: marginX, y, size: 12, font: fontBold, color: rgb(0.1,0.1,0.1) });
+        y -= 24;
+      }
+      // Heading
+      page.drawText(String(s.heading || ''), { x: marginX, y, size: 13, font: fontBold });
       y -= 16;
-      for (const ln of wrap(sec?.body || "", 11)) {
-        if (y < 60) break; // (simple: no multipágina para evitar complejidad)
-        page.drawText(ln, { x: 50, y, size: 11, font });
+      // Body envuelto
+      const lines = wrapText(s.body || '', 11);
+      for (const ln of lines) {
+        if (y < 80) {
+          const p2 = pdfDoc.addPage([595.28, 841.89]);
+          y = 800;
+          p2.drawText(title, { x: marginX, y, size: 12, font: fontBold, color: rgb(0.1,0.1,0.1) });
+          y -= 24;
+        }
+        page.drawText(ln, { x: marginX, y, size: 11, font });
         y -= 14;
       }
+      y -= 8;
     }
 
+    // Footer simple
     if (footer) {
-      page.drawText(footer, {
-        x: 50,
-        y: 30,
-        size: 10,
-        font,
-        color: rgb(0.4, 0.4, 0.4),
-      });
+      page.drawLine({ start: { x: marginX, y: 60 }, end: { x: width - marginX, y: 60 }, thickness: 0.5, color: rgb(0.7,0.7,0.7) });
+      page.drawText(footer, { x: marginX, y: 44, size: 10, font, color: rgb(0.3,0.3,0.3) });
     }
 
-    const pdfBytes = await pdf.save();
-    const base64 = Buffer.from(pdfBytes).toString("base64");
+    const pdfBytes = await pdfDoc.save();
+    const b64 = Buffer.from(pdfBytes).toString('base64');
 
+    // ► Respuesta reforzada para que ChatGPT lo adjunte con más fiabilidad
     return res.status(200).json({
       filename,
-      contentType: "application/pdf",
-      encoding: "base64",
-      data: base64,
+      contentType: 'application/pdf',
+      encoding: 'base64',
+      data: b64,
+      // pista adicional para UIs que prefieran data-uri:
+      dataUri: `data:application/pdf;base64,${b64}`,
+      // info de diagnóstico
+      _meta: { sizeBytes: pdfBytes.length }
     });
+
   } catch (e) {
-    console.error(e);
-    return res.status(500).json({ error: "Error generando el PDF" });
+    // DIAGNÓSTICO: devuelve detalle de error para que lo copies si algo rompe
+    return res.status(500).json({
+      error: 'Error generando el PDF',
+      details: String(e?.stack || e)
+    });
   }
 }
+
