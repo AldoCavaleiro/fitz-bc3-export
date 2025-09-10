@@ -1,28 +1,23 @@
-// api/export-pdf.js
-import { toPDF } from './toPDF.js';
+import toPDF from "./toPDF.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Use POST" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const payload = (req.body && typeof req.body === "object") ? req.body : {};
-    // toPDF debe devolverte un Buffer con el PDF generado
-    const pdfBuffer = await toPDF(payload);
+    const { title, subtitle, date, sections, footer, filename } = req.body;
 
-    const base64Data = pdfBuffer.toString("base64");
-    const filename = (payload.filename || "documento").replace(/\s+/g, "_") + ".pdf";
+    const pdf = await toPDF({ title, subtitle, date, sections, footer });
 
-    return res.status(200).json({
-      filename,
-      contentType: "application/pdf",
-      encoding: "base64",
-      data: base64Data
+    res.status(200).json({
+      filename: filename || pdf.filename,
+      contentType: pdf.contentType,
+      encoding: pdf.encoding,
+      data: pdf.data,
     });
-  } catch (e) {
-    console.error('export-pdf error:', e);
-    return res.status(500).json({ error: "Error generating PDF" });
+  } catch (error) {
+    console.error("PDF export error:", error);
+    res.status(500).json({ error: "Error generating PDF" });
   }
 }
