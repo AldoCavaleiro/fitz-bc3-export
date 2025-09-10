@@ -8,126 +8,90 @@ export default async function handler(req, res) {
   }
 
   try {
-    const body = typeof req.body === "object" && req.body ? req.body : {};
     const {
       title = "Documento",
       subtitle = "",
       date = new Date().toISOString().slice(0, 10),
-      logo = null, // { src: "https://...", width: 90 }
       sections = [], // [{ heading, body }]
       footer = "",
-      filename = "documento.pdf",
-    } = body;
+      filename = "documento.pdf"
+    } = req.body || {};
 
-    // Crear PDF
-    const pdfDoc = await PDFDocument.create();
-    const page = pdfDoc.addPage([595.28, 841.89]); // A4 en puntos
+    const pdf = await PDFDocument.create();
+    const page = pdf.addPage([595.28, 841.89]); // A4
     const { width, height } = page.getSize();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-
-    let cursorY = height - 50;
-
-    // Logo (opcional)
-    if (logo && logo.src) {
-      try {
-        const resp = await fetch(logo.src);
-        const buf = Buffer.from(await resp.arrayBuffer());
-        let img;
-        if (logo.src.toLowerCase().endsWith(".png")) {
-          img = await pdfDoc.embedPng(buf);
-        } else {
-          img = await pdfDoc.embedJpg(buf);
-        }
-        const w = Math.min(Number(logo.width || 90), 200);
-        const scale = w / img.width;
-        const h = img.height * scale;
-        page.drawImage(img, { x: 50, y: cursorY - h, width: w, height: h });
-        cursorY -= h + 18;
-      } catch {
-        // Si falla el logo, seguimos sin él
-        cursorY -= 10;
-      }
-    }
+    let y = height - 60;
+    const marginX = 50;
+    const maxWidth = width - marginX * 2;
 
     // Título
-    page.drawText(title, { x: 50, y: cursorY, size: 20, font: fontBold, color: rgb(0, 0, 0) });
-    cursorY -= 26;
+    page.drawText(String(title), { x: marginX, y, size: 20, font: bold, color: rgb(0,0,0) });
+    y -= 26;
 
     // Subtítulo
     if (subtitle) {
-      page.drawText(subtitle, { x: 50, y: cursorY, size: 12, font, color: rgb(0.1, 0.1, 0.1) });
-      cursorY -= 18;
+      page.drawText(String(subtitle), { x: marginX, y, size: 12, font, color: rgb(0.2,0.2,0.2) });
+      y -= 18;
     }
 
     // Fecha
-    page.drawText(date, { x: 50, y: cursorY, size: 10, font, color: rgb(0.2, 0.2, 0.2) });
-    cursorY -= 24;
+    if (date) {
+      page.drawText(String(date), { x: marginX, y, size: 10, font, color: rgb(0.3,0.3,0.3) });
+      y -= 20;
+    }
 
-    // Secciones
-    const lineHeight = 14;
-    const maxWidth = width - 100;
+    // Línea
+    page.drawLine({ start: { x: marginX, y }, end: { x: width - marginX, y }, thickness: 1, color: rgb(0.8,0.8,0.8) });
+    y -= 18;
 
-    const drawParagraph = (text) => {
+    // Utilidad wrap
+    const wrap = (text, size = 11) => {
       const words = String(text || "").split(/\s+/);
+      const lines = [];
       let line = "";
       for (const w of words) {
         const test = line ? line + " " + w : w;
-        const testWidth = font.widthOfTextAtSize(test, 11);
-        if (testWidth > maxWidth) {
-          page.drawText(line, { x: 50, y: cursorY, size: 11, font, color: rgb(0, 0, 0) });
-          cursorY -= lineHeight;
-          if (cursorY < 80) {
-            // Nueva página si nos quedamos sin espacio
-            const newPage = pdfDoc.addPage([595.28, 841.89]);
-            page.drawText(footer || "", { x: 50, y: 40, size: 10, font, color: rgb(0.3, 0.3, 0.3) });
-            page = newPage; // continuar en nueva
-            cursorY = height - 50;
-          }
+        if (font.widthOfTextAtSize(test, size) > maxWidth) {
+          if (line) lines.push(line);
           line = w;
         } else {
           line = test;
         }
       }
-      if (line) {
-        page.drawText(line, { x: 50, y: cursorY, size: 11, font, color: rgb(0, 0, 0) });
-        cursorY -= lineHeight + 6;
-      }
+      if (line) lines.push(line);
+      return lines;
     };
 
-    for (const s of sections) {
-      const heading = String(s?.heading || "");
-      const bodyText = String(s?.body || "");
-      if (heading) {
-        page.drawText(heading, { x: 50, y: cursorY, size: 13, font: fontBold, color: rgb(0, 0, 0) });
-        cursorY -= 18;
+    // Secciones
+    for (const sec of Array.isArray(sections) ? sections : []) {
+      if (sec.heading) {
+        page.drawText(String(sec.heading), { x: marginX, y, size: 13, font: bold, color: rgb(0,0,0) });
+        y -= 16;
       }
-      if (bodyText) drawParagraph(bodyText);
+      const lines = wrap(sec.body || "");
+      for (const ln of lines) {
+        if (y < 60) break; // (versión simple: 1 página)
+        page.drawText(ln, { x: marginX, y, size: 11, font, color: rgb(0,0,0) });
+        y -= 14;
+      }
+      y -= 6;
     }
 
-    // Pie de página
     if (footer) {
-      page.drawText(footer, { x: 50, y: 40, size: 10, font, color: rgb(0.3, 0.3, 0.3) });
+      page.drawText(String(footer), { x: marginX, y: 40, size: 10, font, color: rgb(0.35,0.35,0.35) });
     }
 
-    const pdfBytes = await pdfDoc.save();
-    const base64 = Buffer.from(pdfBytes).toString("base64");
+    const pdfBytes = await pdf.save();
+    const data = Buffer.from(pdfBytes).toString("base64");
 
-    // Construir URL de descarga estable en el MISMO dominio de la request
-    const origin = `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}`;
-    const payload = { filename, contentType: "application/pdf", data: base64 };
-    const p = Buffer.from(JSON.stringify(payload)).toString("base64url");
-    const url = `${origin}/api/download-pdf?p=${encodeURIComponent(p)}`;
-
-    // OJO: no devolvemos "data" para que el GPT NO intente adjuntar a /mnt/data
     return res.status(200).json({
       filename,
       contentType: "application/pdf",
       encoding: "base64",
-      url
-      // Si quisieras, podrías devolver también dataUri:
-      // dataUri: `data:application/pdf;base64,${base64}`
+      data
     });
   } catch (e) {
     console.error(e);
