@@ -9,7 +9,7 @@ export function toBC3(project) {
   const safe = (s="") => String(s).replace(/\|/g, " ");
 
   const lines = [];
-  // Cabecera FIEBDC-3 con charset declarado (muchos visores lo piden)
+  // Cabecera FIEBDC-3 con charset declarado
   lines.push("~V|FIEBDC-3/2012||ISO-8859-1|");
   lines.push(`~K|${code}|${name}|${desc}|${version}|${today}`);
 
@@ -40,6 +40,5 @@ export function toBC3(project) {
   }
 
   lines.push(`~M|TOTAL PROYECTO|${total.toFixed(2)}`);
-  // CRLF + última línea siempre
   return lines.join("\r\n") + "\r\n";
 }
