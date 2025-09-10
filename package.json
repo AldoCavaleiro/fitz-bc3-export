@@ -3,6 +3,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "docx": "^8.5.0",
+    "exceljs": "^4.4.0"
   }
 }
+
