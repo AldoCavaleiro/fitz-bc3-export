@@ -6,22 +6,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { filename, contentType, encoding, data } = req.body;
-
+    const { filename, contentType, encoding, data } = req.body || {};
     if (!filename || !contentType || !data) {
       return res.status(400).json({ error: "Missing fields in body" });
     }
 
     const buffer =
-      encoding === "base64"
-        ? Buffer.from(data, "base64")
-        : Buffer.from(data, "utf8");
+      encoding === "base64" ? Buffer.from(data, "base64") : Buffer.from(data, "utf8");
 
     res.setHeader("Content-Type", contentType);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename}"`
-    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.send(buffer);
   } catch (e) {
     console.error(e);
