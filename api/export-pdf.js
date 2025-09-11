@@ -1,23 +1,37 @@
-import toPDF from "./toPDF.js";
+// api/export-pdf.js
+export const config = { runtime: "nodejs" };
+
+import { createPdf } from "./toPDF.js";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ error: "Use POST" });
   }
 
   try {
-    const { title, subtitle, date, sections, footer, filename } = req.body;
+    const body = req.body && typeof req.body === "object" ? req.body : {};
 
-    const pdf = await toPDF({ title, subtitle, date, sections, footer });
+    // Genera PDF (Uint8Array)
+    const pdfBytes = await createPdf(body);
 
-    res.status(200).json({
-      filename: filename || pdf.filename,
-      contentType: pdf.contentType,
-      encoding: pdf.encoding,
-      data: pdf.data,
+    // Pasa a base64
+    const base64 = Buffer.from(pdfBytes).toString("base64");
+
+    // Nombre de archivo
+    const filename = (body.filename || "documento") + ".pdf";
+
+    return res.status(200).json({
+      filename,
+      contentType: "application/pdf",
+      encoding: "base64",
+      data: base64
     });
-  } catch (error) {
-    console.error("PDF export error:", error);
-    res.status(500).json({ error: "Error generating PDF" });
+  } catch (e) {
+    console.error("EXPORT_PDF_FAILED:", e);
+    return res.status(500).json({
+      error: "EXPORT_PDF_FAILED",
+      detail: String(e && e.stack ? e.stack : e)
+    });
   }
 }
