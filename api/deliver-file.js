@@ -1,26 +1,33 @@
-// api/deliver-file.js
-export const config = { runtime: "nodejs" };
+export const config = { runtime: "edge" };
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    res.setHeader("Allow", "POST");
-    return res.status(405).json({ error: "Use POST" });
-  }
+/**
+ * Recibe un FileResponse JSON { filename, contentType, encoding:"base64", data }
+ * y entrega el binario con cabeceras correctas para que ChatGPT adjunte el archivo.
+ */
+export default async function handler(req) {
   try {
-    const { filename, contentType, encoding, data } = req.body || {};
-    if (!filename || !contentType || encoding !== "base64" || !data) {
-      return res.status(400).json({ error: "BAD_PAYLOAD" });
+    if (req.method !== "POST") {
+      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
     }
 
-    const buffer = Buffer.from(data, "base64");
-    res.setHeader("Content-Type", contentType);
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${filename.replace(/"/g, "")}"`
-    );
-    return res.status(200).send(buffer);
-  } catch (e) {
-    console.error("DELIVER_FILE_FAILED:", e);
-    return res.status(500).json({ error: "DELIVER_FILE_FAILED" });
+    const body = await req.json().catch(() => ({}));
+    const { filename = "file.bin", contentType = "application/octet-stream", encoding, data } = body || {};
+
+    if (!data || encoding !== "base64") {
+      return new Response(JSON.stringify({ error: "Invalid payload: require {filename, contentType, encoding:'base64', data}" }), { status: 400 });
+    }
+
+    const buffer = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+
+    return new Response(buffer, {
+      status: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition": `attachment; filename="${filename}"`,
+        "Cache-Control": "no-store"
+      }
+    });
+  } catch (err) {
+    return new Response(JSON.stringify({ error: "deliver-file failed", detail: String(err) }), { status: 500 });
   }
 }
