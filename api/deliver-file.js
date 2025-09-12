@@ -1,33 +1,34 @@
-export const config = { runtime: "edge" };
+// api/deliver-file.js
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' });
+    return;
+  }
 
-/**
- * Recibe un FileResponse JSON { filename, contentType, encoding:"base64", data }
- * y entrega el binario con cabeceras correctas para que ChatGPT adjunte el archivo.
- */
-export default async function handler(req) {
   try {
-    if (req.method !== "POST") {
-      return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405 });
+    const { filename, contentType, encoding, data } = req.body || {};
+
+    if (!filename || !contentType || encoding !== 'base64' || !data) {
+      res.status(400).json({ error: 'Invalid payload: expected { filename, contentType, encoding:"base64", data }' });
+      return;
     }
 
-    const body = await req.json().catch(() => ({}));
-    const { filename = "file.bin", contentType = "application/octet-stream", encoding, data } = body || {};
+    // Codifica el JSON en base64url para incluirlo seguro en la URL (?p=...)
+    const payload = JSON.stringify({ f: filename, c: contentType, d: data });
+    const base64 = Buffer.from(payload, 'utf8').toString('base64');
+    const base64url = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 
-    if (!data || encoding !== "base64") {
-      return new Response(JSON.stringify({ error: "Invalid payload: require {filename, contentType, encoding:'base64', data}" }), { status: 400 });
-    }
+    // Construye la URL absoluta a /api/download-file
+    const proto = (req.headers['x-forwarded-proto'] || 'https');
+    const host  = (req.headers['x-forwarded-host'] || req.headers.host);
+    const origin = `${proto}://${host}`;
 
-    const buffer = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+    const url = `${origin}/api/download-file?p=${base64url}`;
 
-    return new Response(buffer, {
-      status: 200,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store"
-      }
-    });
+    // Devolvemos URL (no binario) para que el chat muestre un enlace limpio y estable
+    res.status(200).json({ url, filename, contentType });
   } catch (err) {
-    return new Response(JSON.stringify({ error: "deliver-file failed", detail: String(err) }), { status: 500 });
+    console.error('deliver-file error:', err);
+    res.status(500).json({ error: 'deliver-file failed' });
   }
 }
